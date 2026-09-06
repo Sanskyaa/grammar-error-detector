@@ -64,22 +64,36 @@ def classify_error(original, corrected):
 
 # ---- Full pipeline ----
 def grammar_error_detector(sentence):
+    # Step 1: Logistic Regression opinion
     vec = vectorizer.transform([sentence])
-    pred = clf.predict(vec)[0]
+    lr_pred = clf.predict(vec)[0]  # 1 = grammatical, 0 = ungrammatical
+
+    # Step 2: Always run T5 correction, regardless of LR's opinion
+    corrected = correct_sentence(sentence)
+
+    # Step 3: Compare input vs corrected (case-insensitive, punctuation-insensitive)
+    def normalize(s):
+        return s.strip().lower().rstrip(".")
+
+    t5_found_error = normalize(corrected) != normalize(sentence)
+
+    # Step 4: Final decision — error if EITHER model thinks so
+    has_error = (lr_pred == 0) or t5_found_error
 
     result = {
         "input_sentence": sentence,
-        "has_error": bool(pred == 0),
+        "has_error": bool(has_error),
         "error_types": [],
         "corrected_sentence": sentence
     }
 
-    if pred == 0:
-        corrected = correct_sentence(sentence)
+    if has_error:
         result["corrected_sentence"] = corrected
-        if corrected.strip().lower() != sentence.strip().lower():
+        if t5_found_error:
             result["error_types"] = classify_error(sentence, corrected)
         else:
-            result["error_types"] = ["Detected as ungrammatical, but no correction change found"]
+            result["error_types"] = ["Flagged by classifier, but no correction generated — possible subtle/stylistic issue"]
 
     return result
+
+
